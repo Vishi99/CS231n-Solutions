@@ -5,7 +5,6 @@ import numpy as np
 from cs231n.layers import *
 from cs231n.layer_utils import *
 
-
 class TwoLayerNet(object):
     """
     A two-layer fully-connected neural network with ReLU nonlinearity and
@@ -278,24 +277,24 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        cache = []
-        out = X[:]
-        for i in range(1, self.num_layers + 1):
-            out, c = affine_forward(out, self.params['W'+str(i)], self.params['b'+str(i)])
-            cache.append(c)
-            if(i != self.num_layers):
-                if self.normalization == "batchnorm":
-                    out, c = batchnorm_forward(out, self.params["gamma"+str(i)], self.params["beta"+str(i)], self.bn_params[i-1])
-                    cache.append(c)
-                elif self.normalization == "layernorm":
-                    out, c = layernorm_forward(out, self.params["gamma"+str(i)], self.params["beta"+str(i)], self.bn_params[i-1])
-                    cache.append(c)
-                out, c = relu_forward(out)
-                cache.append(c)
-                if(self.use_dropout):
-                    out, c = dropout_forward(out, self.dropout_params)
-                    cache.append(c)
-        scores = out
+        caches = []
+        out = X
+        gamma, beta, bn_param = None, None, None
+        for i in range(self.num_layers-1):
+            W = self.params['W'+str(i+1)]
+            b = self.params['b'+str(i+1)]
+            if self.normalization != None:
+                gamma = self.params['gamma'+str(i+1)]
+                beta = self.params['beta'+str(i+1)]
+                bn_param = self.bn_params[i]
+            out, cache = affine_norm_relu_forward(out, W, b, gamma, beta, bn_param, self.normalization,
+                                                        self.use_dropout, self.dropout_params)
+            caches.append(cache)
+
+        W = self.params['W'+str(self.num_layers)]
+        b = self.params['b'+str(self.num_layers)]
+        scores, cache = affine_forward(out, W, b)
+        caches.append(cache)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -327,69 +326,19 @@ class FullyConnectedNet(object):
         for i in range(1, self.num_layers+1):
             loss += 0.5*self.reg*(np.sum(self.params['W'+str(i)]**2))
 
-        w_index = self.num_layers
+        dx, dW, db = affine_backward(dx, caches[self.num_layers - 1])
+        grads['W' + str(self.num_layers)] = dW + self.reg * self.params['W' + str(self.num_layers)]
+        grads['b' + str(self.num_layers)] = db
 
-        if not self.use_dropout:
+        for i in range(self.num_layers - 2, -1, -1):
+            dx, dW, db, dgamma, dbeta = affine_norm_relu_backward(dx, caches[i], self.normalization
+                                                                            , self.use_dropout)
             if self.normalization != None:
-                for i in range(len(cache)-1, -3, -3):
-                    Wi = 'W'+str(w_index)
-                    bi = 'b'+str(w_index)
-                    gammai = "gamma"+str(w_index-1)
-                    betai = "beta"+str(w_index-1)
-                    dx, dw, db = affine_backward(dx, cache[i])
-                    if i != 0:
-                        dx = relu_backward(dx, cache[i-1])
-                        if self.normalization == "batchnorm":
-                            dx, dgamma, dbeta = batchnorm_backward(dx, cache[i-2])
-                        elif self.normalization == "layernorm":
-                            dx, dgamma, dbeta = layernorm_backward(dx, cache[i-2])
-                            grads[gammai] = dgamma
-                            grads[betai] = dbeta
-                        grads[Wi] = dw + self.reg*self.params[Wi]
-                        grads[bi] = db
-                        w_index -= 1
-            else:
-                for i in range(len(cache)-1, -2, -2):
-                    Wi = 'W'+str(w_index)
-                    bi = 'b'+str(w_index)
-                    dx, dw, db = affine_backward(dx, cache[i])
-                    if i != 0:
-                        dx = relu_backward(dx, cache[i-1])
-                    grads[Wi] = dw + self.reg*self.params[Wi]
-                    grads[bi] = db
-                    w_index -= 1
+                grads['gamma'+str(i+1)] = dgamma
+                grads['beta'+str(i+1)] = dbeta
 
-        if self.use_dropout:
-            if self.normalization != None:
-                for i in range(len(cache)-1, -4, -4):
-                    Wi = 'W'+str(w_index)
-                    bi = 'b'+str(w_index)
-                    gammai = "gamma"+str(w_index-1)
-                    betai = "beta"+str(w_index-1)
-                    dx, dw, db = affine_backward(dx, cache[i])
-                    if i != 0:
-                        dx = dropout_backward(dx, cache[i-1])
-                        dx = relu_backward(dx, cache[i-2])
-                        if self.normalization == "batchnorm":
-                            dx, dgamma, dbeta = batchnorm_backward(dx, cache[i-3])
-                        elif self.normalization == "layernorm":
-                            dx, dgamma, dbeta = layernorm_backward(dx, cache[i-3])
-                            grads[gammai] = dgamma
-                            grads[betai] = dbeta
-                        grads[Wi] = dw + self.reg*self.params[Wi]
-                        grads[bi] = db
-                        w_index -= 1
-            else:
-                for i in range(len(cache)-1, -3, -3):
-                    Wi = 'W'+str(w_index)
-                    bi = 'b'+str(w_index)
-                    dx, dw, db = affine_backward(dx, cache[i])
-                    if i != 0:
-                        dx = dropout_backward(dx, cache[i-1])
-                        dx = relu_backward(dx, cache[i-2])
-                    grads[Wi] = dw + self.reg*self.params[Wi]
-                    grads[bi] = db
-                    w_index -= 1
+            grads['W'+str(i+1)] = dW + self.reg*self.params['W'+str(i+1)]
+            grads['b'+str(i+1)] = db
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################

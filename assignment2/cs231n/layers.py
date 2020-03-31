@@ -171,6 +171,7 @@ def batchnorm_forward(x, gamma, beta, bn_param):
     mode = bn_param['mode']
     eps = bn_param.get('eps', 1e-5)
     momentum = bn_param.get('momentum', 0.9)
+    ln_param = bn_param.get('ln_param', 0)
 
     N, D = x.shape
     running_mean = bn_param.get('running_mean', np.zeros(D, dtype=x.dtype))
@@ -214,9 +215,9 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         cache['var'] = x_var
         cache['mean'] = x_mean
 
-
-        running_mean = momentum*running_mean + (1 - momentum)*x_mean
-        running_var = momentum*running_var + (1 - momentum)*x_var
+        if(ln_param == 0):
+            running_mean = momentum*running_mean + (1 - momentum)*x_mean
+            running_var = momentum*running_var + (1 - momentum)*x_var
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -234,7 +235,6 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # pass
         x -= running_mean
         x /= np.sqrt(running_var)
-
         out = gamma*x + beta
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -384,20 +384,11 @@ def layernorm_forward(x, gamma, beta, ln_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    # pass
-    x = np.transpose(x)
-    cache = {}
-    x_mean = np.mean(x, axis = 0)
-    x_var = np.var(x, axis = 0) + eps
-    x_c = (x - x_mean)/np.sqrt(x_var)
-    out = gamma*np.transpose(x_c) + beta
+    ln_param['mode'] = 'train'
+    ln_param['ln_param'] = 1
+    out, cache = batchnorm_forward(x.T, gamma.reshape((-1, 1)), beta.reshape((-1, 1)), ln_param)
 
-    cache['x'] = np.transpose(x)
-    cache['x_c'] = np.transpose(x_c)
-    cache['gamma'] = gamma
-    cache['var'] = x_var
-    cache['mean'] = x_mean
-
+    out = out.T
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -431,28 +422,16 @@ def layernorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    # pass
+    dx, _, _ = batchnorm_backward_alt(dout.T, cache)
     dbeta = np.sum(dout, axis = 0)
-    dgamma = np.sum(dout * cache['x_c'], axis = 0)
-
-    N = dout.shape[1]
-    x_c = cache['x_c']
-    gamma = cache['gamma']
-    dx_c = dout*gamma
-    dx_c_sum = np.sum(dx_c.T, axis=0)
-    var = cache['var']
-    std = np.sqrt(cache['var'])
-
-    dx = dx_c.T - x_c.T*np.sum(dx_c.T*x_c.T, axis=0)/N - dx_c_sum/N
-    dx /= std
-
+    dgamma = np.sum(dout * cache['x_c'].T, axis = 0)
     dx = dx.T
+
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
     return dx, dgamma, dbeta
-
 
 def dropout_forward(x, dropout_param):
     """
@@ -797,11 +776,6 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
     eps = bn_param.get('eps', 1e-5)
     momentum = bn_param.get('momentum', 0.9)
 
-    N, C, H, W = x.shape
-    running_mean = bn_param.get('running_mean', np.zeros((C, H, W), dtype=x.dtype))
-    running_var = bn_param.get('running_var', np.zeros((C, H, W), dtype=x.dtype))
-    cache = {}
-
     ###########################################################################
     # TODO: Implement the forward pass for spatial batch normalization.       #
     #                                                                         #
@@ -810,27 +784,10 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
     # Your implementation should be very short; ours is less than five lines. #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-    # pass
-    if mode == 'train':
-        x_mean = np.transpose([[np.mean(x, axis = (0, 2, 3))]*H]*W)
-        x_var = np.transpose([[np.var(x, axis = (0, 2, 3)) + eps]*H]*W)
-        x_c = (x - x_mean)/(np.sqrt(x_var))
-
-        cache['x'] = x
-        cache['mean'] = x_mean
-        cache['var'] = x_var
-        cache['std'] = np.sqrt(x_var)
-        cache['x_c'] = x_c
-
-        out = x_c*np.transpose([[gamma]*H]*W) + np.transpose([[beta]*H]*W)
-
-        # print(x_mean.shape, running_mean.shape)
-        bn_param['running_mean'] = momentum*running_mean + (1 - momentum)*x_mean
-        bn_param['running_var'] = momentum*running_var + (1 - momentum)*x_var
-
-    elif mode == 'test':
-        out = (x - running_mean)/np.sqrt(running_var)
+    N, C, H, W = x.shape
+    x = np.reshape(np.transpose(x, (0, 2, 3, 1)), (-1, C))
+    out, cache = batchnorm_forward(x, gamma, beta, bn_param)
+    out = np.transpose(np.reshape(out, (N, H, W, C)), (0, 3, 1, 2))
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -862,10 +819,11 @@ def spatial_batchnorm_backward(dout, cache):
     # Your implementation should be very short; ours is less than five lines. #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
     # pass
-    
-
+    N, C, H, W = dout.shape
+    dout = np.reshape(np.transpose(dout, (0, 2, 3 ,1)), (-1, C))
+    dx, dgamma, dbeta = batchnorm_backward_alt(dout, cache)
+    dx = np.transpose(np.reshape(dx, (N, H, W, C)), (0, 3, 1, 2))
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -893,7 +851,7 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     - out: Output data, of shape (N, C, H, W)
     - cache: Values needed for the backward pass
     """
-    out, cache = None, None
+    out, cache = None, {}
     eps = gn_param.get('eps',1e-5)
     ###########################################################################
     # TODO: Implement the forward pass for spatial group normalization.       #
@@ -904,7 +862,24 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = x.shape
+    size = (N*G, C//G * H * W)
+    x = x.reshape(size).T
+
+    x_mean = x.mean(axis=0)
+    x_var = x.var(axis=0) + eps
+    x_c = (x - x_mean)/np.sqrt(x_var)
+    x_c = x_c.T.reshape(N, C, H, W)
+
+    cache['mean'] = x_mean
+    cache['var'] = x_var
+    cache['std'] = np.sqrt(x_var)
+    cache['x_c'] = x_c
+    cache['x'] = x
+    cache['G'] = G
+    cache['gamma'] = gamma
+
+    out = x_c*gamma + beta
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -934,7 +909,20 @@ def spatial_groupnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = dout.shape
+    G = cache['G']
+    size = (N*G, C//G * H * W)
+    dbeta = np.sum(dout, axis=(0,2,3), keepdims=True)
+    dgamma = np.sum(dout * cache['x_c'], axis=(0,2,3), keepdims=True)
+
+    x_c = cache['x_c'].reshape(size).T
+    M = x_c.shape[0]
+    dx_c = dout * cache['gamma']
+    dx_c = dx_c.reshape(size).T
+    dx_c_sum = np.sum(dx_c,axis=0)
+    dx = dx_c - dx_c_sum/M - np.sum(dx_c * x_c,axis=0) * x_c/M
+    dx /= cache['std']
+    dx = dx.T.reshape(N, C, H, W)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################

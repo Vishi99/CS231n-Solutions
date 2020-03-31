@@ -29,6 +29,57 @@ def affine_relu_backward(dout, cache):
     dx, dw, db = affine_backward(da, fc_cache)
     return dx, dw, db
 
+def affine_norm_relu_forward(x, w, b, gamma, beta, bn_param, norm, dropout, do_param):
+    c_norm, c_do = None, None
+
+    out, c_aff = affine_forward(x, w, b)
+
+    if norm == "batchnorm":
+        out, c_norm = batchnorm_forward(out, gamma, beta, bn_param)
+    elif norm == "layernorm":
+        out, c_norm = layernorm_forward(out, gamma, beta, bn_param)
+
+    out, c_relu = relu_forward(out)
+
+    if(dropout):
+        out, c_do = dropout_forward(out, do_param)
+
+    return out, (c_aff, c_norm, c_relu, c_do)
+
+def affine_norm_relu_backward(dout, cache, norm, dropout):
+    c_aff, c_norm, c_relu, c_do = cache
+
+    if(dropout):
+        dout = dropout_backward(dout, c_do)
+
+    dout = relu_backward(dout, c_relu)
+
+    dgamma, dbeta = None, None
+    if norm == "batchnorm":
+        dout, dgamma, dbeta = batchnorm_backward(dout, c_norm)
+    elif norm == "layernorm":
+        dout, dgamma, dbeta = layernorm_backward(dout, c_norm)
+
+    dx, dW, db = affine_backward(dout, c_aff)
+
+    return dx, dW, db, dgamma, dbeta
+
+    # fc_cache, bn_cache, relu_cache, do_cache = cache
+    # # dropout
+    # if dropout:
+    #    dout = dropout_backward(dout, do_cache)
+    # # relu
+    # dout = relu_backward(dout, relu_cache)
+    # # batch/layer norm
+    # dgamma, dbeta = None, None
+    # if normalization == 'batchnorm':
+    #    dout, dgamma, dbeta = batchnorm_backward_alt(dout, bn_cache)
+    # elif normalization == 'layernorm':
+    #    dout, dgamma, dbeta = layernorm_backward(dout, bn_cache)
+    # # affine layer
+    # dx, dw, db = affine_backward(dout, fc_cache)
+    # return dx, dw, db, dgamma, dbeta
+
 
 def conv_relu_forward(x, w, b, conv_param):
     """
