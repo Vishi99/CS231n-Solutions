@@ -108,7 +108,7 @@ class KNearestNeighbor(object):
             dists[i] += np.sum(np.power(temp, 2), axis=1)
             dists[i] -= 2*np.dot(self.X_train, X[i])
             dists[i] = np.power(dists[i], 0.5)
-            
+
             # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         return dists
 
@@ -136,8 +136,6 @@ class KNearestNeighbor(object):
         #       and two broadcast sums.                                         #
         #########################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-        #pass
 
         sum_test = np.transpose([np.sum(np.power(X, 2), axis = 1)]*num_train)
         dists += sum_test
@@ -192,7 +190,6 @@ class KNearestNeighbor(object):
             #########################################################################
             # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-            #pass
             closest_y.sort()
             cnt = 1
             maxcnt = -1
